@@ -1,0 +1,15 @@
+services:
+  tubedrop:
+    build: .                # needs deps/dropin: git clone https://github.com/equwal/dropin deps/dropin
+    image: tubedrop
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # environment:
+    #   TUBEDROP_PASSWORD: "set one if others can reach the port"
+    #   TUBEDROP_PRIVACY: unlisted
+    #   TUBEDROP_DELETE_SOURCE: "1"
+    #   TUBEDROP_REDIRECT: http://localhost:8080/oauth/callback
+    volumes:
+      - ./data:/data        # drop files in ./data/inbox, or on the web page
+      - ./config:/config    # client_secret.json goes here; token.json appears after Connect

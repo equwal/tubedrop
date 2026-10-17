@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tubedrop</title>
+<style>
+:root{--bg:#fafafa;--card:#fff;--fg:#1b1b1b;--mute:#6b6b6b;--line:#e3e3e3;--accent:#c4302b;--ok:#2a7d4f;--warn:#9a6700;--bad:#b3261e;--drop:#fff4f3}
+@media (prefers-color-scheme:dark){:root{--bg:#121212;--card:#1c1c1c;--fg:#ececec;--mute:#9a9a9a;--line:#2e2e2e;--accent:#ff5a52;--ok:#5cc58a;--warn:#e3b341;--bad:#ff8a80;--drop:#2a1716}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.4rem;margin:0}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.mute{color:var(--mute)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px;cursor:pointer;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+#drop{border:2px dashed var(--line);border-radius:12px;padding:40px 16px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s}
+#drop.over{background:var(--drop);border-color:var(--accent)}
+#drop strong{font-size:1.1rem}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:4px}
+.bar>div{height:100%;background:var(--accent);width:0}
+table{width:100%;border-collapse:collapse}
+td,th{padding:6px 8px 6px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-weight:600;font-size:.85rem;color:var(--mute)}
+td.name{word-break:break-word}
+.pill{display:inline-block;font-size:.8rem;padding:1px 8px;border-radius:99px;border:1px solid currentColor}
+.done{color:var(--ok)}.failed{color:var(--bad)}.held{color:var(--warn)}.running{color:var(--accent)}.inbox,.work{color:var(--mute)}
+.err{font-size:.85rem;color:var(--mute)}
+.counts{display:flex;gap:16px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+form.paste{display:flex;gap:8px;margin-top:8px}
+form.paste input{flex:1;min-width:0;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>tubedrop</h1>
+  <div id="account" class="mute">…</div>
+</header>
+
+<div class="card" id="connect" hidden>
+  <p id="connect-text"></p>
+  <a class="btn primary" href="/oauth/start">Connect YouTube</a>
+  <details style="margin-top:10px"><summary class="mute">The browser landed on a page that did not load?</summary>
+    <p class="mute">That happens when this server is not on your computer. Copy the whole address from the address bar and paste it here.</p>
+    <form class="paste" method="post" action="/oauth/paste"><input name="url" placeholder="http://localhost:8080/oauth/callback?state=…&code=…" required><button>Finish</button></form>
+  </details>
+</div>
+
+<div class="card">
+  <div id="drop" tabindex="0" role="button" aria-label="Choose files to upload">
+    <strong>Drop audio or video files here</strong><br>
+    <span class="mute">or click to choose. Each file becomes one <span id="privacy">private</span> YouTube video.</span>
+    <input id="pick" type="file" multiple hidden>
+  </div>
+  <div id="sending"></div>
+</div>
+
+<div class="card">
+  <div class="counts" id="counts"></div>
+  <table>
+    <thead><tr><th>File</th><th>State</th><th></th></tr></thead>
+    <tbody id="jobs"><tr><td colspan="3" class="mute">Loading…</td></tr></tbody>
+  </table>
+</div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function send(file) {
+  const row = document.createElement('div');
+  row.innerHTML = `<div>${esc(file.name)} <span class="mute">sending</span></div><div class="bar"><div></div></div>`;
+  $('#sending').append(row);
+  const fill = row.querySelector('.bar>div'), note = row.querySelector('.mute');
+  const body = new FormData(); body.append('file', file, file.name);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/upload');
+  xhr.upload.onprogress = e => { if (e.lengthComputable) fill.style.width = (100 * e.loaded / e.total) + '%'; };
+  xhr.onload = () => { if (xhr.status === 200) { row.remove(); refresh(); } else note.textContent = 'failed: ' + xhr.responseText; };
+  xhr.onerror = () => note.textContent = 'failed: network error';
+  xhr.send(body);
+}
+const sendAll = files => [...files].forEach(send);
+
+const drop = $('#drop');
+drop.onclick = () => $('#pick').click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#pick').click(); } };
+$('#pick').onchange = e => { sendAll(e.target.files); e.target.value = ''; };
+['dragenter','dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => sendAll(e.dataTransfer.files));
+
+async function retry(name) {
+  await fetch('/api/retry', {method: 'POST', body: new URLSearchParams({name})});
+  refresh();
+}
+
+const order = {running: 0, held: 1, work: 2, inbox: 3, failed: 4, done: 5};
+async function refresh() {
+  let s;
+  try { s = await (await fetch('/api/status')).json(); } catch { $('#account').textContent = 'server not reachable'; return; }
+  $('#privacy').textContent = s.privacy;
+  $('#account').innerHTML = s.connected ? '<span class="done">● connected to YouTube</span>' : '<span class="held">● not connected</span>';
+  $('#connect').hidden = s.connected;
+  $('#connect-text').textContent = s.client
+    ? 'Connect the YouTube account that will receive the videos. Files wait in the queue until then.'
+    : 'Put your OAuth client file (Desktop app) at client_secret.json in the config folder, then connect.';
+  const n = {}; s.jobs.forEach(j => n[j.state] = (n[j.state] || 0) + 1);
+  $('#counts').innerHTML = ['running','held','inbox','work','failed','done']
+    .filter(k => n[k]).map(k => `<span class="${k}">${n[k]} ${k}</span>`).join('') || '<span class="mute">No files yet.</span>';
+  const jobs = s.jobs.slice().sort((a, b) => (order[a.state] - order[b.state]) || ((b.finished || 0) - (a.finished || 0)));
+  $('#jobs').innerHTML = jobs.map(j => `<tr>
+      <td class="name">${j.url ? `<a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.name)}</a>` : esc(j.name)}
+        ${j.error ? `<div class="err">${esc(j.error)}</div>` : ''}</td>
+      <td><span class="pill ${j.state}">${j.state}${j.stage && j.state !== 'done' ? ': ' + esc(j.stage) : ''}</span></td>
+      <td>${j.state === 'failed' ? `<button data-retry="${esc(j.name)}">Retry</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="mute">Nothing queued.</td></tr>';
+  document.querySelectorAll('[data-retry]').forEach(b => b.onclick = () => retry(b.dataset.retry));
+}
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>
